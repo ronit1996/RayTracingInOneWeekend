@@ -1,0 +1,13 @@
+CXX = clang++
+CXXFLAGS = -std=c++17 -Wall -Wextra
+TARGET = rayTracer
+SOURCES = rayTracing.cpp
+
+all:
+	 $(CXX) $(CXXFLAGS) -o $(TARGET) $(SOURCES)
+
+clean:
+	 rm -f $(TARGET)
+
+run: all
+	./$(TARGET)
