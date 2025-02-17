@@ -3,9 +3,11 @@
 
 #include "hittable.h"
 #include "ray.h"
+#include "rtweekend.h"
 #include "vec3.h"
 #include "color.h"
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include "material.h"
 
@@ -16,7 +18,10 @@ class Camera{
     Point3 pixel00_loc; //location of the first pixel//
     Vec3 pixel_delta_u; //offset pixel to the right//
     Vec3 pixel_delta_v; //offset piexel to down //
-    double pixel_samples_scale; // Color scale factor for a sum of pixel samples
+    double pixel_samples_scale; // Color scale factor for a sum of pixel samples//
+    Vec3 u, v, w; //camera frame basis vectors//
+    Vec3 defocus_disk_u; //defocus disk/lens horizontal radius//
+    Vec3 defocus_disk_v; //defocus disk/lens vertical radius//
 
     void initialize(){
         image_height = int(image_width/aspect_ratio);
@@ -28,30 +33,40 @@ class Camera{
 
         pixel_samples_scale = 1.0 / samples_per_pixel;
 
-        camera_center = Point3(0,0,0);
+        camera_center = lookfrom;
 
         // Create viewport //
-        auto focal_length = 1.0;
-        auto viewport_height = 2.0;
-        auto viewport_width = viewport_height*(double(image_width)/image_height);
-        auto camera_center = Point3(0,0,0);
+        auto theta = degrees_to_radians(vfov);
+        auto h = std::tan(theta/2);
+        auto viewport_height = 2 * h * focus_dist;
+        auto viewport_width = viewport_height * (double(image_width)/image_height);
+
+        // Calculate the u, v, w vectors //
+        w = unit_vector(lookfrom-lookat);
+        u = unit_vector(cross(vup, w));
+        v = cross(w, u);
 
         // Calculate the vectors of horizontal and vertical viewport edges //
-        auto viewport_u = Vec3(viewport_width, 0, 0);
-        auto viewport_v = Vec3(0, -viewport_height, 0);
+        auto viewport_u = viewport_width * u;
+        auto viewport_v = viewport_height * -v;
 
         // Calculate the pixel width and height //
         pixel_delta_u = viewport_u / image_width;
         pixel_delta_v = viewport_v / image_height;
 
         // Calculate the location of the upper left pixel //
-        auto viewport_upper_left = camera_center - Vec3(0,0,focal_length) - (viewport_u/2) - (viewport_v/2);
+        auto viewport_upper_left = camera_center - (focus_dist * w) - (viewport_u/2) - (viewport_v/2);
         pixel00_loc = viewport_upper_left + (0.5 * (pixel_delta_u+pixel_delta_v));
+
+        // Calculate the camera defocus disk basis vectors //
+        auto defocus_radius = focus_dist * std::tan(degrees_to_radians(defocus_angle / 2));
+        defocus_disk_u = u * defocus_radius;
+        defocus_disk_v = v * defocus_radius;
 
     }
 
     Ray get_ray(int i, int j) const {
-            // Construct a camera ray originating from the origin and directed at randomly sampled
+            // Construct a camera ray originating from the defocus disk and directed at randomly sampled
             // point around the pixel location i, j.
 
             auto offset = sample_square();
@@ -59,7 +74,7 @@ class Camera{
                               + ((i + offset[0]) * pixel_delta_u)
                               + ((j + offset[1]) * pixel_delta_v);
 
-            auto ray_origin = camera_center;
+            auto ray_origin = (defocus_angle <= 0) ? camera_center : defocus_disk_sample();
             auto ray_direction = pixel_sample - ray_origin;
 
             return Ray(ray_origin, ray_direction);
@@ -68,6 +83,11 @@ class Camera{
         Vec3 sample_square() const {
             // Returns the vector to a random point in the [-.5,-.5]-[+.5,+.5] unit square.
             return Vec3(random_double() - 0.5, random_double() - 0.5, 0);
+        }
+
+        Point3 defocus_disk_sample() const {
+            auto p = random_in_unit_disk();
+            return camera_center + (p[0] * defocus_disk_u) + (p[1] * defocus_disk_v);
         }
 
     /*Color3 ray_color(const Ray& r, const Hittable& world, int depth){
@@ -116,7 +136,13 @@ class Camera{
     // Image //
     int image_width;
     double aspect_ratio;
-    int  samples_per_pixel = 10; // Count of random samples for each pixel
+    int  samples_per_pixel = 10; // Count of random samples for each pixel //
+    double vfov = 90; //vertical view angle//
+    Vec3 lookfrom = Point3(0,0,0); //the position of the camera//
+    Vec3 lookat = Point3(0,0,-1); //where the camera is looking at//
+    Vec3 vup = Vec3(0,1,0); //up vector//
+    double defocus_angle = 0; //variation angle of rays through each pixel//
+    double focus_dist = 10; //distance between camera lookfrom (center) to the focal plane//
 
     void render(const Hittable& world){
         // Start time //
